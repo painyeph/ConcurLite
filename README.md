@@ -8,8 +8,8 @@ def foo():         #  <--------------------+
     print(1)       #                       |
     yield          #  >--+                 |
     print(3)       #     |  <--+           |
-                   #     |     |           |
-@concurlite.spawn  #     |  >- | ----+     |
+                   #     |  >- | ----+     |
+@concurlite.spawn  #     |     |     |     |
 def bar():         #  <--+     |     |     |
     print(2)       #           |     |     |
     yield          #  >--------+     |     |
