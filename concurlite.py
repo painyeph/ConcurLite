@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"A Pure Python concurrency library"
+"A pure Python concurrency library"
 
 __author__ = 'eph'
 __license__ = 'WTFPL v2'
 
-__all__ = ['Event', 'Thread', 'Timer', 'CyclicThread',
+__all__ = ['Event', 'Thread', 'Timer', 'Cyclic',
            'spawn', 'delay', 'every', 'join', 'clear']
 
 import sys
@@ -101,7 +101,7 @@ class Thread(object):
                 raise RuntimeError('event loop is stopped')
 
             # remove stopped cyclic thread
-            if isinstance(thread, CyclicThread) and not thread.is_alive():
+            if isinstance(thread, Cyclic) and not thread.is_alive():
                 continue
 
             # test if join() run out of time
@@ -116,7 +116,7 @@ class Thread(object):
             if dt > 0: sleep(dt)
 
             # for cyclic thread
-            if isinstance(thread, CyclicThread):
+            if isinstance(thread, Cyclic):
                 thread.__time += thread.interval
                 _push(thread)
                 it = thread.run()
@@ -191,12 +191,12 @@ class Timer(Thread):
     def interval(self):
         return self.__interval
 
-    def __init__(self, interval, function, args=[], kwargs={}):
+    def __init__(self, interval, function=None, args=[], kwargs={}):
         self.__interval = interval
         Thread.__init__(self, None, function, None, args, kwargs)
 
 
-class CyclicThread(Thread):
+class Cyclic(Thread):
 
     @property
     def interval(self):
@@ -205,11 +205,10 @@ class CyclicThread(Thread):
     def is_alive(self):
         return self.__alive
 
-    def __init__(self, interval, group=None, target=None, name=None,
-                       args=(), kwargs={}):
+    def __init__(self, interval, function=None, args=[], kwargs={}):
         self.__interval = interval
         self.__alive = True
-        super(CyclicThread, self).__init__(group, target, name, args, kwargs)
+        Thread.__init__(self, None, function, None, args, kwargs)
 
     def stop(self):
         if not self.started:
@@ -224,30 +223,29 @@ def spawn(target, *args, **kwargs):
 
 
 def delay(interval, target=None, *args, **kwargs):
-    if target is None:
 
+    if target is None:  # as a decorator
         def _delay(target, *args, **kwargs):
-            thread = Timer(interval, function=target, args=args, kwargs=kwargs)
+            thread = Timer(interval, target, args, kwargs)
             thread.start()
             return thread
         return _delay
 
-    thread = Timer(interval, function=target, args=args, kwargs=kwargs)
+    thread = Timer(interval, target, args, kwargs)
     thread.start()
     return thread
 
 
 def every(interval, target=None, *args, **kwargs):
-    if target is None:
 
+    if target is None:  # as a decorator
         def _every(target, *args, **kwargs):
-            thread = CyclicThread(interval, target=target,
-                                  args=args, kwargs=kwargs)
+            thread = Cyclic(interval, target, args, kwargs)
             thread.start()
             return thread
         return _every
 
-    thread = CyclicThread(interval, target=target, args=args, kwargs=kwargs)
+    thread = Cyclic(interval, target, args, kwargs)
     thread.start()
     return thread
 
@@ -266,7 +264,7 @@ def join(timeout=None):
             break
 
         # remove stopped cyclic thread
-        if isinstance(thread, CyclicThread) and not thread.is_alive():
+        if isinstance(thread, Cyclic) and not thread.is_alive():
             _pop()
             continue
 
