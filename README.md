@@ -60,5 +60,7 @@ concurlite.join()       # ----------------------------------+
 | yield                                   | time.sleep(0)                          |
 | yield secs                              | time.sleep(secs)                       |
 | event = concurlite.Event()              | event = threading.Event()              |
-| yield event                             | event.wait()                           |
 | event.set()                             | event.set()                            |
+| yield event                             | event.wait()                           |
+| yield event, timeout                    | event.wait(timeout)                    |
+| yield event1, event2, timeout           |                                        |
