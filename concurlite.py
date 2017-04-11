@@ -14,7 +14,7 @@ except ImportError:
     if sys.platform == 'win32':
         from time import clock as perf_counter
     else:
-        from time import perf_counter
+        from time import time as perf_counter
 
 
 _push, _pop, _head = (lambda h: (lambda t: heappush(h, t),
