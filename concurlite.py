@@ -165,7 +165,9 @@ class Thread(object):
                         raise RuntimeError('invalid object yield from thread')
                     elif timeout is None or timeout > item: timeout = item
 
-                if events:
+                if len(events) == 1 and timeout is None:
+                    res = events[0]
+                elif events:
                     res = Event()
                     for event in events: event._apply(res.set)
                     if timeout is not None: delay(timeout, res.set)
@@ -176,7 +178,10 @@ class Thread(object):
 
             # store thread in event and wait for event.set()
             if isinstance(res, Event):
-                res._apply(_push, thread)
+                def callback(thread):
+                    thread.__time = perf_counter()
+                    _push(thread)
+                res._apply(callback, thread)
                 continue
 
             # store thread in main list for next step
