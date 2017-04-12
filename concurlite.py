@@ -7,7 +7,7 @@ __author__ = 'eph'
 __license__ = 'WTFPL v2'
 
 __all__ = ['Event', 'Thread', 'Timer', 'Cyclic',
-           'spawn', 'delay', 'every', 'join', 'clear']
+           'spawn', 'delay', 'every', 'joinall', 'join', 'clear']
 
 import sys
 from time import sleep
@@ -52,12 +52,8 @@ class Event(object):
 
 class Thread(object):
 
-    @property
-    def started(self):
-        return self.__start
-
     def is_alive(self):
-        return self.__alive
+        return not self.__stop.is_set()
 
     def __init__(self, group=None, target=None, name=None, args=(), kwargs={}):
         if group is not None: raise ValueError('group should be None')
@@ -65,44 +61,48 @@ class Thread(object):
         self.__target = target
         self.__args = args
         self.__kwargs = kwargs
-        self.__start = False
+        self.__start = Event()
+        self.__stop = Event()
         self.__time = 0
-        self.__alive = True
         self.__iter = None
 
     def __lt__(self, other):
         return self.__time < other.__time
 
     def start(self):
-        if self.__start:
+        if self.__start.is_set():
             raise RuntimeError('threads can only be started once')
-        self.__start = True
+        self.__start.set()
         self.__time = perf_counter()
         if isinstance(self, Timer): self.__time += self.interval
         _push(self)
+
+    def stop(self):
+        if not self.__start.is_set():
+            raise RuntimeError('cannot stop thread before it is started')
+        self.__stop.set()
 
     def run(self):
         if self.__target:
             return self.__target(*self.__args, **self.__kwargs)
 
     def join(self, timeout=None):
-        if not self.__start:
-            raise RuntimeError('cannot join thread before it is started')
+        '''Wait until the thread terminates. This function should only
+        be used outside of threads. In threads, use `yield thread`
+        instead.
+        '''
+        if timeout is not None: timeout += perf_counter()
 
-        if timeout is not None:
-            timeout += perf_counter()
-
-        while self.is_alive():
+        while not self.__stop.is_set():
 
             # pop head thread
             try:
                 thread = _pop()
             except IndexError:
-                raise RuntimeError('event loop is stopped')
+                break
 
-            # remove stopped cyclic thread
-            if isinstance(thread, Cyclic) and not thread.is_alive():
-                continue
+            # remove stopped thread
+            if thread.__stop.is_set(): continue
 
             # test if join() run out of time
             if timeout is not None and thread.__time > timeout:
@@ -126,7 +126,7 @@ class Thread(object):
                     continue
                 else:
                     thread = Thread()
-                    thread.__start = True
+                    thread.__start.set()
                     thread.__iter = it
 
             # run thread.run() or convert to an iterator of steps
@@ -135,7 +135,7 @@ class Thread(object):
                 try:
                     it = iter(it)
                 except:
-                    thread.__alive = False
+                    thread.__stop.set()
                     continue
                 else:
                     thread.__iter = it
@@ -146,35 +146,40 @@ class Thread(object):
             try:
                 res = next(it)
             except StopIteration:
-                thread.__alive = False
+                thread.__stop.set()
+
+            if thread.__stop.is_set():
+                it.close()
                 continue
 
-            # convert iterable to None/Number/Event
+            # convert yielded object to None / Number / Event
+            if isinstance(res, Thread): res = res.__stop
             if not (res is None or isinstance(res, (Real, Event))):
                 try:
                     it = iter(res)
                 except:
                     raise RuntimeError('invalid object yield from thread')
 
-                timeout = None
+                t_wait = None
                 events = []
                 for item in it:
                     if item is None: continue
                     elif isinstance(item, Event): events.append(item)
+                    elif isinstance(item, Thread): events.append(item.__stop)
                     elif not isinstance(item, Real):
                         raise RuntimeError('invalid object yield from thread')
-                    elif timeout is None or timeout > item: timeout = item
+                    elif t_wait is None or t_wait > item: t_wait = item
 
-                if len(events) == 1 and timeout is None:
+                if len(events) == 1 and t_wait is None:
                     res = events[0]
                 elif events:
                     res = Event()
                     for event in events: event._apply(res.set)
-                    if timeout is not None: delay(timeout, res.set)
-                elif timeout is None:
+                    if t_wait is not None: delay(t_wait, res.set)
+                elif t_wait is None:
                     res = None
                 else:
-                    res = timeout
+                    res = t_wait
 
             # store thread in event and wait for event.set()
             if isinstance(res, Event):
@@ -185,8 +190,8 @@ class Thread(object):
                 continue
 
             # store thread in main list for next step
-            t = perf_counter()
-            thread.__time = t if res is None else t + res
+            t_now = perf_counter()
+            thread.__time = t_now if res is None else t_now + res
             _push(thread)
 
 
@@ -207,18 +212,9 @@ class Cyclic(Thread):
     def interval(self):
         return self.__interval
 
-    def is_alive(self):
-        return self.__alive
-
     def __init__(self, interval, function=None, args=[], kwargs={}):
         self.__interval = interval
-        self.__alive = True
         Thread.__init__(self, None, function, None, args, kwargs)
-
-    def stop(self):
-        if not self.started:
-            raise RuntimeError('cannot stop thread before it is started')
-        self.__alive = False
 
 
 def spawn(target, *args, **kwargs):
@@ -255,23 +251,12 @@ def every(interval, target=None, *args, **kwargs):
     return thread
 
 
-def join(timeout=None):
+def joinall(threads, timeout=None):
 
     if timeout is not None:
         timeout += perf_counter()
 
-    while True:
-
-        # get head thread
-        try:
-            thread = _head()
-        except IndexError:
-            break
-
-        # remove stopped cyclic thread
-        if isinstance(thread, Cyclic) and not thread.is_alive():
-            _pop()
-            continue
+    for thread in threads:
 
         # test if join() run out of time
         if timeout is not None:
@@ -282,6 +267,27 @@ def join(timeout=None):
 
         # join head thread
         thread.join(dt)
+
+
+def join(timeout=None):
+
+    def iter_threads():
+        while True:
+
+            # get head thread
+            try:
+                thread = _head()
+            except IndexError:
+                return
+
+            # remove stopped cyclic thread
+            if not thread.is_alive():
+                _pop()
+                continue
+
+            yield thread
+
+    joinall(iter_threads(), timeout)
 
 
 def clear():

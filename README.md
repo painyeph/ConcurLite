@@ -52,15 +52,17 @@ concurlite.join()       # ----------------------------------+
 
 ## Comparison with multithreading
 
-| ConcurLite                              | Multithreading                         |
-|-----------------------------------------|----------------------------------------|
-| thread = concurlite.Thread(target=func) | thread = threading.Thread(target=func) |
-| thread.start()                          | thread.start()                         |
-| thread.join(timeout)                    | thread.join(timeout)                   |
-| yield                                   | time.sleep(0)                          |
-| yield secs                              | time.sleep(secs)                       |
-| event = concurlite.Event()              | event = threading.Event()              |
-| event.set()                             | event.set()                            |
-| yield event                             | event.wait()                           |
-| yield event, timeout                    | event.wait(timeout)                    |
-| yield event1, event2, timeout           |                                        |
+|                      | ConcurLite                                | Multithreading                         |
+|----------------------|-------------------------------------------|----------------------------------------|
+| Create a thread      | thread = concurlite.Thread(target=func)   | thread = threading.Thread(target=func) |
+| Start a thread       | thread.start()                            | thread.start()                         |
+| Join a thread        | yield thread                              | thread.join()                          |
+| Join with timeout    | yield thread, timeout                     | thread.join(timeout)                   |
+| Call a subroutine    | yield concurlite.spawn(subroutine, *args) | subroutine(*args)                      |
+| Switch among threads | yield                                     | time.sleep(0)                          |
+| Wait for a time      | yield secs                                | time.sleep(secs)                       |
+| Create an event      | event = concurlite.Event()                | event = threading.Event()              |
+| Trigger an event     | event.set()                               | event.set()                            |
+| Wait for an evnet    | yield event                               | event.wait()                           |
+| Wait with timeout    | yield event, timeout                      | event.wait(timeout)                    |
+| Wait for any object  | yield thread, event, timeout              |                                        |

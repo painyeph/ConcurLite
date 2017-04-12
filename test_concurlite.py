@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Author: eph
+
+__author__ = 'eph'
+__license__ = 'WTFPL v2'
 
 import unittest
 
@@ -135,7 +137,7 @@ class TestConcurLite(unittest.TestCase):
         event2 = concurlite.Event()
 
         def subroutine():
-            l.append(2)
+            l.append(3)
             yield 0.3, event1
             l.append(5)
             yield event1, event2
@@ -144,21 +146,51 @@ class TestConcurLite(unittest.TestCase):
         @concurlite.spawn
         def thread1():
             l.append(1)
-            for item in subroutine(): yield item
-            l.append(8)
+            yield concurlite.spawn(subroutine)
+            l.append(9)
 
         @concurlite.spawn
         def thread2():
-            l.append(3)
+            l.append(2)
             yield 0.2
             l.append(4)
             yield 0.2
             l.append(6)
             yield event2.set()
-            l.append(9)
+            l.append(8)
 
         concurlite.join()
         self.assertEqual(l, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+    def test_thread_join(self):
+        l = []
+
+        @concurlite.spawn
+        def thread1():
+            yield 0.4
+
+        @concurlite.spawn
+        def thread2():
+            yield 0.8
+
+        @concurlite.spawn
+        def thread3():
+            l.append(1)
+            yield thread1
+            l.append(3)
+            yield thread2
+            l.append(5)
+
+        @concurlite.spawn
+        def thread4():
+            l.append(2)
+            yield thread1
+            l.append(4)
+            yield thread2
+            l.append(6)
+
+        concurlite.join()
+        self.assertEqual(l, [1, 2, 3, 4, 5, 6])
 
     def test_join_timeout(self):
         l = []
@@ -175,6 +207,7 @@ class TestConcurLite(unittest.TestCase):
 
         concurlite.join(0.5)
         self.assertEqual(l, [1, 2, 3])
+        concurlite.clear()
 
 
 if __name__ == '__main__':
